@@ -1,0 +1,35 @@
+// @vitest-environment jsdom
+import { beforeEach, expect, it, vi } from 'vitest'
+vi.mock('./storage', () => ({ desktop: false }))
+vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }))
+beforeEach(() => { vi.resetModules(); localStorage.clear(); vi.unstubAllGlobals() })
+it('deduplicates concurrent lookups and caches successful results', async () => {
+  const fetcher = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ title: 'Example title', icon: null }) })
+  vi.stubGlobal('fetch', fetcher)
+  const { getMetadata } = await import('./metadata')
+  const [a, b] = await Promise.all([getMetadata('https://example.com'), getMetadata('https://example.com')])
+  expect(a).toEqual(b)
+  expect(a.title).toBe('Example title')
+  await getMetadata('https://example.com')
+  expect(fetcher).toHaveBeenCalledTimes(1)
+  expect(localStorage.getItem('bookmark-desk.metadata.v1')).toContain('Example title')
+})
+it('limits requests to two and drains the queue', async () => {
+  const resolvers: (() => void)[] = []
+  const fetcher = vi.fn(() => new Promise(resolve => resolvers.push(() => resolve({ ok: true, json: async () => ({ title: null, icon: null }) }))))
+  vi.stubGlobal('fetch', fetcher)
+  const { getMetadata } = await import('./metadata')
+  const requests = [1, 2, 3].map(n => getMetadata(`https://example.com/${n}`))
+  expect(fetcher).toHaveBeenCalledTimes(2)
+  resolvers[0]()
+  await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(3))
+  resolvers[1](); resolvers[2]()
+  await Promise.all(requests)
+})
+it('does not cache failures and permits retry', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false }).mockResolvedValueOnce({ ok: true, json: async () => ({ title: 'Retry', icon: null }) }))
+  const { getMetadata } = await import('./metadata')
+  await expect(getMetadata('https://example.com')).rejects.toThrow()
+  await new Promise(resolve => setTimeout(resolve, 0))
+  expect((await getMetadata('https://example.com')).title).toBe('Retry')
+})

@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Bookmark Desk",
+  "version": "0.1.0",
+  "description": "Save the current page to your paired local Bookmark Desk desktop library.",
+  "permissions": ["activeTab", "contextMenus", "storage", "nativeMessaging", "alarms"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "action": { "default_popup": "popup.html", "default_title": "Save to Bookmark Desk" },
+  "options_page": "setup.html",
+  "content_security_policy": { "extension_pages": "script-src 'self'; object-src 'none'" }
+}
